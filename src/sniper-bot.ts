@@ -28,6 +28,9 @@ import { QUOTE_MINT_WSOL } from "./constants/tokenAddresses";
 // === Types ===
 import type { NewPoolEvent } from "./workflow/handleNewPool";
 
+import { handlePriceUpdate } from "./trading/autoSell";
+
+
 const DEFAULT_PUMPSWAP_PROGRAM_ID = 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA';
 const PUMPSWAP_PROGRAM_ID = process.env.PUMPSWAP_PROGRAM_ID ?? DEFAULT_PUMPSWAP_PROGRAM_ID;
 const SOL_MINT_ADDRESS = 'So11111111111111111111111111111111111111112';
@@ -699,7 +702,7 @@ async function handleLogNotification(logInfo: any, source: string) {
 
           // 4) مرحله چهارم: ذخیره پوزیشن برای Auto-Sell
 
-          const buyPriceInQuote = /* اینجا قیمت توکن در لحظه خرید */;
+          const buyPriceInQuote = priceMonitor.getCurrentPrice(mintPubkey.toBase58()) ?? 0;
 
           const pos = saveNewPosition({
             pool: poolPubkey.toBase58(),
@@ -775,7 +778,17 @@ const walletWrapper = { keypair, publicKey: keypair.publicKey };
 
 // WSOL manager and price monitor
 const wsolManager = new WSOLManager(connection, keypair);
-const priceMonitor: WebSocketPriceMonitor = getPriceMonitor(process.env.WEBSOCKET_PRICE_URL ?? RPC_URL);
+
+const priceMonitor = getPriceMonitor();
+priceMonitor.connect();
+
+priceMonitor.onPriceUpdateFromPumpSwap((update) => {
+  handlePriceUpdate({
+    pool: update.tokenMint,
+    baseMint: update.tokenMint,
+    priceInQuote: update.priceInSol,
+  });
+});
 
 let ctrlCCount = 0;
 

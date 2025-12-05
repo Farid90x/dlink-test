@@ -2,6 +2,8 @@
 import WebSocket from 'ws';
 import { PublicKey } from '@solana/web3.js';
 import { logger } from './logger';
+import { handlePriceUpdate } from "./trading/autoSell";
+
 
 interface PriceUpdate {
   tokenMint: string;
@@ -135,27 +137,41 @@ export class WebSocketPriceMonitor {
   /**
    * Handle incoming WebSocket messages
    */
+  private globalPriceCallbacks: PriceCallback[] = [];
+
+  onPriceUpdateFromPumpSwap(cb: PriceCallback) {
+    this.globalPriceCallbacks.push(cb);
+  }
+
   private handleMessage(message: any): void {
-    // Handle different message types
-    if (message.type === 'price_update') {
+    if (message.type === "price_update") {
       const update: PriceUpdate = {
         tokenMint: message.token,
         priceInSol: message.price || 0,
         timestamp: message.timestamp || Date.now(),
         liquidity: message.liquidity,
       };
-      this.latestPrices.set(update.tokenMint, update); // ذخیره آخرین قیمت
-      const callbacks = this.subscribers.get(update.tokenMint);
-      if (callbacks && callbacks.length > 0) {
-        callbacks.forEach(callback => callback(update));
+
+      // ذخیره آخرین قیمت
+      this.latestPrices.set(update.tokenMint, update);
+
+      // subscriberهای اختصاصی هر توکن
+      const perTokenCallbacks = this.subscribers.get(update.tokenMint);
+      if (perTokenCallbacks) {
+        perTokenCallbacks.forEach((cb) => cb(update));
       }
-    } else if (message.type === 'heartbeat' || message.type === 'pong') {
-      // Heartbeat response, connection is alive
+
+      // callbackهای عمومی — برای AutoSell یا سایر سیستم‌ها
+      this.globalPriceCallbacks.forEach((cb) => cb(update));
+
+    } else if (message.type === "heartbeat" || message.type === "pong") {
+      // alive
     } else {
-      // Unknown message type, log for debugging
       logger.debug(`[WS] Unknown message type: ${message.type}`);
     }
   }
+
+
 
   /**
    * Start heartbeat to keep connection alive
